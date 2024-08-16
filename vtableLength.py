@@ -94,6 +94,27 @@ class PyMemory:
                     return rtti_complete_object_locator + 0x8
             reference = reference + 0x4
 
+    def is_valid_vtable_function(self, vtable_fn: int) -> bool:
+        if int(self.read_address(vtable_fn)[7], 16) != 0x00:
+            return False
+
+        fn_start = int.from_bytes(self.read_address(vtable_fn, cast_list=False), byteorder='little') - self.pe.OPTIONAL_HEADER.ImageBase
+        if int(self.read_address(fn_start, 1)[0], 16) >= 0x0F:
+            return True
+
+        return False
+
+    def get_vtable_length(self, vtable_name: str):
+        fn = self.get_virtual_table_by_name(vtable_name)
+        if fn == PyMemory.INVALID_ADDRESS:
+            return -1
+
+        count = 0
+        while self.is_valid_vtable_function(fn):
+            count += 1
+            fn += 8
+
+        return count
 
     @staticmethod
     def to_ida_pattern(byte_list: list) -> str:
@@ -120,3 +141,4 @@ if __name__ == '__main__':
 
     addr = mem.get_virtual_table_by_name("CCSPlayerPawn")
     print(PyMemory.to_ida_pattern(mem.read_address(addr, 16)))
+    print(mem.get_vtable_length("CCSPlayerPawn"))
