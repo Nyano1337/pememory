@@ -2,72 +2,62 @@ import json
 import os
 import pefile
 
+class PyMemory:
+    INVALID_ADDRESS = -1
 
-def read_byte_at_virtual_address(pe, virtual_address):
-    # 遍历所有节以找到包含该虚拟地址的节
-    for section in pe.sections:
-        section_start = section.VirtualAddress
-        section_end = section.VirtualAddress + section.Misc_VirtualSize
+    def __init__(self, file_path: str):
+        self.pe = pefile.PE(file_path, fast_load=True)
 
-        # 检查虚拟地址是否在节的范围内
-        if section_start <= virtual_address < section_end:
-            # 计算在节中的偏移量
-            offset = virtual_address - section_start
-            # 读取该偏移的字节
+    def read(self, addr: int, bytes_to_read: int = 8, cast_list: bool = True):
+        for section in self.pe.sections:
+            section_start = section.VirtualAddress
+            section_end = section.VirtualAddress + section.Misc_VirtualSize
+            if section_start <= addr < section_end:
+                offset = addr - section_start
+                section_data = section.get_data()
+                if offset < len(section_data):
+                    return [hex(byte) for byte in section_data[offset : offset + bytes_to_read]] if cast_list \
+                        else section_data[offset : offset + bytes_to_read]
+                else:
+                    return None
+        return None
+
+    def resolve_relative_address(self, addr: int, offset_register = 0x3, offset_next_instruction = 0x7) -> int:
+        skip_register = addr + offset_register
+        relative_addr = int.from_bytes(self.read(skip_register, 4, False), byteorder='little')
+        next_instruction = addr + offset_next_instruction
+        return next_instruction + relative_addr
+
+    def sig_scan(self, sig: str) -> int:
+        byte_array = bytes.fromhex(sig)
+        for section in self.pe.sections:
             section_data = section.get_data()
-            # 以安全方式获取字节
-            if offset < len(section_data):
-                byte_value = section_data[offset]
-                print(f"Byte at new virtual address {hex(virtual_address)}: {hex(byte_value)}")
-                return offset
-            else:
-                print("Offset out of range for the section.")
-                return None
+            offset = section_data.find(byte_array)
+            if offset != -1:
+                return section.VirtualAddress + offset
+        return PyMemory.INVALID_ADDRESS
 
-    print("Virtual address not found in any section.")
-    return None
+    @staticmethod
+    def to_ida_pattern(bytes: list) -> str:
+        return " ".join(f"{int(x, 16):02X}" for x in bytes)
 
-def find_signature(pe, signature):
-    # 将十六进制签名转换为字节数组
-    byte_array = bytes.fromhex(signature)
-    sig_length = len(byte_array)
-
-    # 遍历所有节
-    for section in pe.sections:
-        # 读取节的内容
-        section_data = section.get_data()
-
-        # 在节数据中查找签名
-        offset = section_data.find(byte_array)
-        if offset != -1:
-            virtual_addr = section.VirtualAddress + offset;
-            print(f"Signature found in section '{section.Name.decode().rstrip(chr(0))}' at offset {hex(virtual_addr)}")
-
-            to_offset = int.from_bytes(section_data[offset + 1:offset + 5], byteorder='little')
-            print(f"to_offset: {to_offset}")
-
-            jump_to = virtual_addr + 5 + to_offset
-            print(f"Jump to: {hex(jump_to)}")
-
-            offs = read_byte_at_virtual_address(pe, jump_to)
-
-            ret_bytes = section_data[offs:offs + 12]
-            print(f"Bytes: {[hex(b) for b in ret_bytes]}")
-            #first_byte = section_data[offset]
-            #print(f"First byte at the signature offset: {hex(first_byte)}")
 
 if __name__ == '__main__':
     module = "server"
-    game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
-    file_path = game_path + "csgo/bin/win64/" + module + ".dll"
+    game_path = r"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game/"
+    file_path = game_path + r"csgo/bin/win64/" + module + ".dll"
 
     sig = "E8 F5 80 20 00"
 
-    pe = pefile.PE(file_path, fast_load=True)
-    # 打印 PE 文件的基本信息
-    #print(f"Number of Sections: {len(pe.sections)}")
-    #print(f"Entry Point: {hex(pe.OPTIONAL_HEADER.AddressOfEntryPoint)}")
-    #print(pe.dump_info())
+    mem = PyMemory(file_path)
 
-    find_signature(pe, sig)
+    fn = mem.sig_scan(sig)
+
+    print(hex(fn))
+
+    jump = mem.resolve_relative_address(fn, 1, 5)
+    print(hex(jump))
+
+    ret_bytes = mem.read(jump, 12)
+    print(PyMemory.to_ida_pattern(ret_bytes))
 
