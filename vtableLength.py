@@ -1,7 +1,3 @@
-import json
-import os
-from idlelib.searchengine import get_selection
-
 import pefile
 
 class PyMemory:
@@ -91,7 +87,7 @@ class PyMemory:
             val1 = int(self.read_address(reference - 0xC, 1)[0], 16)
             val2 = int(self.read_address(reference - 0x8, 1)[0], 16)
             if val1 == 1 and val2 == 0:
-                offset_reference = reference - 0xC
+                offset_reference = reference - 0xC + self.pe.OPTIONAL_HEADER.ImageBase
                 offset_reference_bytes = offset_reference.to_bytes(8, byteorder='little')
                 rtti_complete_object_locator = self.find_pattern_by_bytes(offset_reference_bytes, readonly_data)
                 if rtti_complete_object_locator != PyMemory.INVALID_ADDRESS:
@@ -109,10 +105,9 @@ if __name__ == '__main__':
     game_path = r"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game/"
     file_path = game_path + r"csgo/bin/win64/" + module + ".dll"
 
-    sig = "E8 F5 80 20 00"
-
     mem = PyMemory(file_path)
 
+    # sig = "E8 F5 80 20 00"
     # fn = mem.sig_scan(sig)
     #
     # print(hex(fn))
