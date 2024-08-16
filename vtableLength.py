@@ -65,15 +65,15 @@ class PyMemory:
 
     def get_virtual_table_by_name(self, vtable_name: str, decorated: bool = False):
         if len(vtable_name) == 0:
-            return None
+            return PyMemory.INVALID_ADDRESS
 
         runtime_data = self.get_section(".data")
         if runtime_data is None:
-            return None
+            return PyMemory.INVALID_ADDRESS
 
         readonly_data = self.get_section(".rdata")
         if readonly_data is None:
-            return None
+            return PyMemory.INVALID_ADDRESS
 
         decorated_table_name = vtable_name if decorated \
             else ".?AV" + vtable_name + "@@"
