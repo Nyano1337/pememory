@@ -122,7 +122,7 @@ class PEMemory:
 
         return count
 
-    def get_vtable_func_by_offset(self, vtable_name: str, target_offset: int):
+    def get_vtable_func_by_offset(self, vtable_name: str, target_offset: int, use_dq_offset: bool = True):
         fn = self.get_vtable_by_name(vtable_name)
         if fn == PEMemory.INVALID_ADDRESS:
             return PEMemory.INVALID_ADDRESS
@@ -130,6 +130,9 @@ class PEMemory:
         current_offset = 0
         while self.is_valid_vtable_function(fn):
             if current_offset is target_offset:
+                if use_dq_offset:
+                    dq_offset = int.from_bytes(self.read_address(fn, cast_list=False), byteorder='little')
+                    return dq_offset - self.pe.OPTIONAL_HEADER.ImageBase
                 return fn
             current_offset += 1
             fn += 8

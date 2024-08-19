@@ -21,5 +21,5 @@ if __name__ == '__main__':
     print(PEMemory.to_ida_pattern(mem.read_address(addr, 16, False)))
     print(mem.get_vtable_length("CCSPlayerPawn"))
 
-    vtable_fn = mem.get_vtable_func_by_offset("CCSPlayerPawn", 23)
-    print(PEMemory.to_ida_pattern(mem.read_address(vtable_fn, 16)))
+    vtable_fn = mem.get_vtable_func_by_offset("CCSPlayerPawn", 1)
+    print(PEMemory.to_ida_pattern(mem.read_address(vtable_fn, 24)))
