@@ -117,5 +117,7 @@ class PEMemory:
         return count
 
     @staticmethod
-    def to_ida_pattern(byte_list: list) -> str:
-        return " ".join(f"{int(x, 16):02X}" for x in byte_list)
+    def to_ida_pattern(byte_list) -> str:
+        if isinstance(byte_list, list):
+            return " ".join(f"{int(x, 16):02X}" for x in byte_list)
+        return " ".join(f"{x:02X}" for x in byte_list)
