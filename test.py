@@ -2,7 +2,7 @@ from pememory import PEMemory
 
 if __name__ == '__main__':
     module = "server"
-    game_path = r"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game/"
+    game_path = r"E:\Steam\steamapps\common\Counter-Strike Global Offensive\game/"
     file_path = game_path + r"csgo/bin/win64/" + module + ".dll"
 
     mem = PEMemory(file_path)
@@ -17,6 +17,9 @@ if __name__ == '__main__':
     ret_bytes = mem.read_address(jump, 16)
     print(PEMemory.to_ida_pattern(ret_bytes))
 
-    addr = mem.get_virtual_table_by_name("CCSPlayerPawn")
-    print(PEMemory.to_ida_pattern(mem.read_address(addr, 16)))
+    addr = mem.get_vtable_by_name("CCSPlayerPawn")
+    print(PEMemory.to_ida_pattern(mem.read_address(addr, 16, False)))
     print(mem.get_vtable_length("CCSPlayerPawn"))
+
+    vtable_fn = mem.get_vtable_func_by_offset("CCSPlayerPawn", 23)
+    print(PEMemory.to_ida_pattern(mem.read_address(vtable_fn, 16)))

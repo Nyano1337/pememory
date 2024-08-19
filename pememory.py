@@ -6,6 +6,12 @@ class PEMemory:
     def __init__(self, file_path: str):
         self.pe = pefile.PE(file_path, fast_load=True)
 
+    @staticmethod
+    def to_ida_pattern(byte_list) -> str:
+        if isinstance(byte_list, list):
+            return " ".join(f"{int(x, 16):02X}" for x in byte_list)
+        return " ".join(f"{x:02X}" for x in byte_list)
+
     def get_address(self, section: pefile.SectionStructure, offset: int):
         section_start = section.VirtualAddress
         section_end = section.VirtualAddress + section.Misc_VirtualSize
@@ -63,7 +69,7 @@ class PEMemory:
             return PEMemory.INVALID_ADDRESS
         return self.get_address(section, offset)
 
-    def get_virtual_table_by_name(self, vtable_name: str, decorated: bool = False):
+    def get_vtable_by_name(self, vtable_name: str, decorated: bool = False):
         if len(vtable_name) == 0:
             return PEMemory.INVALID_ADDRESS
 
@@ -105,7 +111,7 @@ class PEMemory:
         return False
 
     def get_vtable_length(self, vtable_name: str):
-        fn = self.get_virtual_table_by_name(vtable_name)
+        fn = self.get_vtable_by_name(vtable_name)
         if fn == PEMemory.INVALID_ADDRESS:
             return -1
 
@@ -116,8 +122,16 @@ class PEMemory:
 
         return count
 
-    @staticmethod
-    def to_ida_pattern(byte_list) -> str:
-        if isinstance(byte_list, list):
-            return " ".join(f"{int(x, 16):02X}" for x in byte_list)
-        return " ".join(f"{x:02X}" for x in byte_list)
+    def get_vtable_func_by_offset(self, vtable_name: str, target_offset: int):
+        fn = self.get_vtable_by_name(vtable_name)
+        if fn == PEMemory.INVALID_ADDRESS:
+            return PEMemory.INVALID_ADDRESS
+
+        current_offset = 0
+        while self.is_valid_vtable_function(fn):
+            if current_offset is target_offset:
+                return fn
+            current_offset += 1
+            fn += 8
+
+        return PEMemory.INVALID_ADDRESS
