@@ -1,10 +1,12 @@
 import pefile
 
+
 class PEMemory:
     INVALID_ADDRESS = -1
 
     def __init__(self, file_path: str):
         self.pe = pefile.PE(file_path, fast_load=True)
+        self.sig_maker = SigMaker(self.pe)
 
     @staticmethod
     def to_ida_pattern(byte_list) -> str:
@@ -28,8 +30,8 @@ class PEMemory:
                 offset = addr - section_start
                 section_data = section.get_data()
                 if offset < len(section_data):
-                    return [hex(byte) for byte in section_data[offset : offset + bytes_to_read]] if cast_list \
-                        else section_data[offset : offset + bytes_to_read]
+                    return [hex(byte) for byte in section_data[offset: offset + bytes_to_read]] if cast_list \
+                        else section_data[offset: offset + bytes_to_read]
                 else:
                     return None
         return None
@@ -41,7 +43,7 @@ class PEMemory:
                 return section
         return None
 
-    def resolve_relative_address(self, addr: int, offset_register = 0x3, offset_next_instruction = 0x7) -> int:
+    def resolve_relative_address(self, addr: int, offset_register=0x3, offset_next_instruction=0x7) -> int:
         skip_register = addr + offset_register
         relative_addr = int.from_bytes(self.read_address(skip_register, 4, False), byteorder='little')
         next_instruction = addr + offset_next_instruction
@@ -89,7 +91,8 @@ class PEMemory:
         rtti_type_descriptor_bytes = rtti_type_descriptor.to_bytes(4, byteorder='little')
 
         reference = 0
-        while (reference := self.find_pattern_by_bytes(rtti_type_descriptor_bytes, readonly_data, reference)) != PEMemory.INVALID_ADDRESS:
+        while (reference := self.find_pattern_by_bytes(rtti_type_descriptor_bytes, readonly_data,
+                                                       reference)) != PEMemory.INVALID_ADDRESS:
             val1 = int(self.read_address(reference - 0xC, 1)[0], 16)
             val2 = int(self.read_address(reference - 0x8, 1)[0], 16)
             if val1 == 1 and val2 == 0:
@@ -104,7 +107,8 @@ class PEMemory:
         if int(self.read_address(vtable_fn)[7], 16) != 0x00:
             return False
 
-        fn_start = int.from_bytes(self.read_address(vtable_fn, cast_list=False), byteorder='little') - self.pe.OPTIONAL_HEADER.ImageBase
+        fn_start = int.from_bytes(self.read_address(vtable_fn, cast_list=False),
+                                  byteorder='little') - self.pe.OPTIONAL_HEADER.ImageBase
         if int(self.read_address(fn_start, 1)[0], 16) >= 0x0F:
             return True
 
@@ -138,3 +142,8 @@ class PEMemory:
             fn += 8
 
         return PEMemory.INVALID_ADDRESS
+
+
+class SigMaker:
+    def __init__(self, pe: pefile.PE):
+        self.pe = pe
