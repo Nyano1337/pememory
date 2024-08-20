@@ -1,5 +1,5 @@
 import pefile
-
+import capstone
 
 class PEMemory:
     INVALID_ADDRESS = -1
@@ -14,7 +14,19 @@ class PEMemory:
             return " ".join(f"{int(x, 16):02X}" for x in byte_list)
         return " ".join(f"{x:02X}" for x in byte_list)
 
-    def get_address(self, section: pefile.SectionStructure, offset: int):
+    def get_address(self, offset: int, section: pefile.SectionStructure = None):
+        if section is not None:
+            return self.get_address_with_section(offset, section)
+
+        for section in self.pe.sections:
+            section_start = section.VirtualAddress
+            section_end = section.VirtualAddress + section.Misc_VirtualSize
+            target_addr = section_start + offset
+            if section_start <= target_addr < section_end:
+                return target_addr
+        return PEMemory.INVALID_ADDRESS
+
+    def get_address_with_section(self, offset: int, section: pefile.SectionStructure):
         section_start = section.VirtualAddress
         section_end = section.VirtualAddress + section.Misc_VirtualSize
         target_addr = section_start + offset
@@ -63,13 +75,13 @@ class PEMemory:
         offset = section.get_data().find(encoded_pattern)
         if offset == -1:
             return PEMemory.INVALID_ADDRESS
-        return self.get_address(section, offset)
+        return self.get_address(offset, section)
 
     def find_pattern_by_bytes(self, pattern: bytes, section: pefile.SectionStructure, start_offset: int = 0) -> int:
         offset = section.get_data().find(pattern, start_offset)
         if offset == -1:
             return PEMemory.INVALID_ADDRESS
-        return self.get_address(section, offset)
+        return self.get_address(offset, section)
 
     def get_vtable_by_name(self, vtable_name: str, decorated: bool = False):
         if len(vtable_name) == 0:
@@ -147,3 +159,4 @@ class PEMemory:
 class SigMaker:
     def __init__(self, pe: pefile.PE):
         self.pe = pe
+        self.md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
