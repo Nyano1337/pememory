@@ -28,9 +28,13 @@ if __name__ == '__main__':
     #print(mem.get_vtable_length("CCSPlayerPawn"))
 
     vtable_fn = mem.get_vtable_func_by_offset("CCSPlayerPawn", 1)
+    vtable_fn2 = mem.get_vtable_func_by_offset("CCSPlayerPawn", 2)
 
     fn_start_bytes = mem.read_address(vtable_fn, 24, False)
     print(PEMemory.to_ida_pattern(fn_start_bytes))
+
+    fn_start_bytes2 = mem.read_address(vtable_fn2, 24, False)
+    print(PEMemory.to_ida_pattern(fn_start_bytes2))
 
     CODE = fn_start_bytes
     addr = mem.get_address(vtable_fn)

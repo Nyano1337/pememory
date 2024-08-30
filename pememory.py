@@ -7,6 +7,8 @@ class PEMemory:
     def __init__(self, file_path: str):
         self.pe = pefile.PE(file_path, fast_load=True)
         self.sig_maker = SigMaker(self.pe)
+        # vtable_name : [address]
+        self.vtable_cache = {}
 
     @staticmethod
     def to_ida_pattern(byte_list) -> str:
@@ -127,33 +129,33 @@ class PEMemory:
         return False
 
     def get_vtable_length(self, vtable_name: str):
+        if vtable_name in self.vtable_cache:
+            return len(self.vtable_cache[vtable_name])
+
         fn = self.get_vtable_by_name(vtable_name)
         if fn == PEMemory.INVALID_ADDRESS:
             return -1
 
         count = 0
+        vtable_fns = []
         while self.is_valid_vtable_function(fn):
+            vtable_fns.append(fn)
             count += 1
             fn += 8
 
+        self.vtable_cache[vtable_name] = vtable_fns
         return count
 
     def get_vtable_func_by_offset(self, vtable_name: str, target_offset: int, use_dq_offset: bool = True):
-        fn = self.get_vtable_by_name(vtable_name)
-        if fn == PEMemory.INVALID_ADDRESS:
+        vtable_len = self.get_vtable_length(vtable_name)
+        if target_offset < 0 or target_offset > vtable_len:
             return PEMemory.INVALID_ADDRESS
 
-        current_offset = 0
-        while self.is_valid_vtable_function(fn):
-            if current_offset is target_offset:
-                if use_dq_offset:
-                    dq_offset = int.from_bytes(self.read_address(fn, cast_list=False), byteorder='little')
-                    return dq_offset - self.pe.OPTIONAL_HEADER.ImageBase
-                return fn
-            current_offset += 1
-            fn += 8
-
-        return PEMemory.INVALID_ADDRESS
+        fn = self.vtable_cache[vtable_name][target_offset]
+        if use_dq_offset:
+            dq_offset = int.from_bytes(self.read_address(fn, cast_list=False), byteorder='little')
+            return dq_offset - self.pe.OPTIONAL_HEADER.ImageBase
+        return fn
 
 
 class SigMaker:
