@@ -6,9 +6,16 @@ class PEMemory:
 
     def __init__(self, file_path: str):
         self.pe = pefile.PE(file_path, fast_load=True)
-        self.sig_maker = SigMaker(self.pe)
-        # vtable_name : [address]
+        self.sig_maker = SigMaker(self)
+
+        # str : list
+        # vtable_name -> [address]
         self.vtable_cache = {}
+
+        # int : int
+        # fn_start -> fn_end
+        self.runtime_functions = {}
+        self.init_runtime_functions()
 
     @staticmethod
     def to_ida_pattern(byte_list) -> str:
@@ -85,7 +92,7 @@ class PEMemory:
             return PEMemory.INVALID_ADDRESS
         return self.get_address(offset, section)
 
-    def get_vtable_by_name(self, vtable_name: str, decorated: bool = False):
+    def get_vtable_by_name(self, vtable_name: str, decorated: bool = False) -> int:
         if len(vtable_name) == 0:
             return PEMemory.INVALID_ADDRESS
 
@@ -128,7 +135,7 @@ class PEMemory:
 
         return False
 
-    def get_vtable_length(self, vtable_name: str):
+    def get_vtable_length(self, vtable_name: str) -> int:
         if vtable_name in self.vtable_cache:
             return len(self.vtable_cache[vtable_name])
 
@@ -146,7 +153,7 @@ class PEMemory:
         self.vtable_cache[vtable_name] = vtable_fns
         return count
 
-    def get_vtable_func_by_offset(self, vtable_name: str, target_offset: int, use_dq_offset: bool = True):
+    def get_vtable_func_by_offset(self, vtable_name: str, target_offset: int, use_dq_offset: bool = True) -> int:
         vtable_len = self.get_vtable_length(vtable_name)
         if target_offset < 0 or target_offset > vtable_len:
             return PEMemory.INVALID_ADDRESS
@@ -157,8 +164,61 @@ class PEMemory:
             return dq_offset - self.pe.OPTIONAL_HEADER.ImageBase
         return fn
 
+    def init_runtime_functions(self):
+        procedure_data = self.get_section(".pdata")
+        if procedure_data is None:
+            return
+
+        current_offset = procedure_data.VirtualAddress
+        section_len = procedure_data.VirtualAddress + procedure_data.Misc_VirtualSize
+
+        while current_offset < section_len:
+            start_addr = int.from_bytes(self.read_address(current_offset, 4, cast_list=False), byteorder='little')
+            end_addr = int.from_bytes(self.read_address(current_offset + 4, 4, cast_list=False), byteorder='little')
+            # unwind_info_address = int.from_bytes(self.read_address(current_offset + 8, 4, cast_list=False), byteorder='little')
+            self.runtime_functions[start_addr] = end_addr
+            current_offset += 12
+
 
 class SigMaker:
-    def __init__(self, pe: pefile.PE):
-        self.pe = pe
+    def __init__(self, mem: PEMemory):
+        self.mem = mem
         self.md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        self.md.detail = True
+
+    def get_function_end(self, fn_start: int) -> int:
+        if fn_start in self.mem.runtime_functions:
+            return self.mem.runtime_functions[fn_start]
+
+        text_data = self.mem.get_section(".text")
+        section_end = text_data.VirtualAddress + text_data.Misc_VirtualSize
+        current_addr = fn_start
+
+        # Guessing Attributes: thunk
+        codes = self.mem.read_address(current_addr, 20, False)
+        instructions = self.md.disasm(codes, current_addr + self.mem.pe.OPTIONAL_HEADER.ImageBase)[0]
+        current_ins_idx = 1
+        for ins in instructions:
+            current_addr += ins.size
+            if current_ins_idx <= 3 and ins.mnemonic == "jmp":
+                return current_addr
+            current_ins_idx += 1
+
+        # Guessing game
+        # I don't know how IDA parse function
+        while current_addr < section_end:
+            code = self.mem.read_address(current_addr, 20, False)
+            ins = self.md.disasm(code, fn_start + self.mem.pe.OPTIONAL_HEADER.ImageBase)[0]
+            current_addr += ins.size
+
+            # Finally we got the true ret instruction?
+            if ins.mnemonic == "ret":
+                return current_addr
+
+        return PEMemory.INVALID_ADDRESS
+
+    def make_sig(self, fn_start):
+        fn_end = self.get_function_end(fn_start)
+        if fn_end is PEMemory.INVALID_ADDRESS:
+            return []
+        return self.mem.to_ida_pattern(self.mem.read_address(fn_start, fn_end - fn_start, cast_list=False))
