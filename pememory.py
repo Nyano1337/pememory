@@ -79,18 +79,12 @@ class PEMemory:
                 return section.VirtualAddress + offset
         return PEMemory.INVALID_ADDRESS
 
-    def find_pattern_by_str(self, pattern: str, section: pefile.SectionStructure) -> int:
-        encoded_pattern = pattern.encode('utf-8')
-        offset = section.get_data().find(encoded_pattern)
-        if offset == -1:
-            return PEMemory.INVALID_ADDRESS
-        return self.get_address(offset, section)
+    def find_pattern_by_str(self, pattern: str, section: pefile.SectionStructure, start_offset: int = 0, to_addr: bool = True) -> int:
+        return self.find_pattern_by_bytes(pattern.encode('utf-8'), section, start_offset, to_addr)
 
-    def find_pattern_by_bytes(self, pattern: bytes, section: pefile.SectionStructure, start_offset: int = 0) -> int:
+    def find_pattern_by_bytes(self, pattern: bytes, section: pefile.SectionStructure, start_offset: int = 0, to_addr: bool = True) -> int:
         offset = section.get_data().find(pattern, start_offset)
-        if offset == -1:
-            return PEMemory.INVALID_ADDRESS
-        return self.get_address(offset, section)
+        return self.get_address_with_section(offset, section) if to_addr else offset
 
     def get_vtable_by_name(self, vtable_name: str, decorated: bool = False) -> int:
         if len(vtable_name) == 0:
@@ -108,12 +102,16 @@ class PEMemory:
             else ".?AV" + vtable_name + "@@"
 
         type_descriptor_name = self.find_pattern_by_str(decorated_table_name, runtime_data)
+        if type_descriptor_name is PEMemory.INVALID_ADDRESS:
+            return PEMemory.INVALID_ADDRESS
+
         rtti_type_descriptor = type_descriptor_name - 0x10
         rtti_type_descriptor_bytes = rtti_type_descriptor.to_bytes(4, byteorder='little')
 
-        reference = 0
-        while (reference := self.find_pattern_by_bytes(rtti_type_descriptor_bytes, readonly_data,
-                                                       reference)) != PEMemory.INVALID_ADDRESS:
+        current_offset = 0
+        while (current_offset := self.find_pattern_by_bytes(
+                rtti_type_descriptor_bytes, readonly_data, current_offset, False)) != PEMemory.INVALID_ADDRESS:
+            reference = self.get_address(current_offset, readonly_data)
             val1 = int(self.read_address(reference - 0xC, 1)[0], 16)
             val2 = int(self.read_address(reference - 0x8, 1)[0], 16)
             if val1 == 1 and val2 == 0:
@@ -122,7 +120,8 @@ class PEMemory:
                 rtti_complete_object_locator = self.find_pattern_by_bytes(offset_reference_bytes, readonly_data)
                 if rtti_complete_object_locator != PEMemory.INVALID_ADDRESS:
                     return rtti_complete_object_locator + 0x8
-            reference = reference + 0x4
+            current_offset += 0x4
+        return PEMemory.INVALID_ADDRESS
 
     def is_valid_vtable_function(self, vtable_fn: int) -> bool:
         if int(self.read_address(vtable_fn)[7], 16) != 0x00:

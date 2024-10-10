@@ -4,10 +4,10 @@ from pememory import PEMemory
 from capstone import *
 
 if __name__ == '__main__':
-    module = "server"
-    game_path = r"E:\Steam\steamapps\common\Counter-Strike Global Offensive\game/"
-    file_path = game_path + r"csgo/bin/win64/" + module + ".dll"
-
+    #module = "server"
+    #game_path = r"E:\Steam\steamapps\common\Counter-Strike Global Offensive\game/"
+    #file_path = game_path + r"csgo/bin/win64/" + module + ".dll"
+    file_path = r"E:\cs2bins\2024-10-8\server.dll"
     mem = PEMemory(file_path)
 
     for x in mem.pe.sections:
@@ -15,13 +15,12 @@ if __name__ == '__main__':
 
     sig = "E8 F5 80 20 00"
     fn = mem.sig_scan(sig)
-    print(hex(fn))
-
-    jump = mem.resolve_relative_address(fn, 1, 5)
-    print(hex(jump))
-
-    ret_bytes = mem.read_address(jump, 16)
-    print(PEMemory.to_ida_pattern(ret_bytes))
+    if fn != PEMemory.INVALID_ADDRESS:
+        print(hex(fn))
+        jump = mem.resolve_relative_address(fn, 1, 5)
+        print(hex(jump))
+        ret_bytes = mem.read_address(jump, 16)
+        print(PEMemory.to_ida_pattern(ret_bytes))
 
     addr = mem.get_vtable_by_name("CCSPlayerPawn")
     print(PEMemory.to_ida_pattern(mem.read_address(addr, 16, False)))
