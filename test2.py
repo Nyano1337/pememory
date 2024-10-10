@@ -10,8 +10,5 @@ if __name__ == '__main__':
 
     mem = PEMemory(file_path)
 
-    for x in mem.pe.sections:
-        print(x.Name.decode('utf-8'))
-
     vlen = mem.get_vtable_length("CEngineWatchdogThread")
     print(vlen)

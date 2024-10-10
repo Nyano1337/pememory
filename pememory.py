@@ -130,7 +130,11 @@ class PEMemory:
 
         fn_start = int.from_bytes(self.read_address(vtable_fn, cast_list=False),
                                   byteorder='little') - self.pe.OPTIONAL_HEADER.ImageBase
-        if int(self.read_address(fn_start, 1)[0], 16) >= 0x0F:
+        opcode = self.read_address(fn_start, 1)
+        if opcode is None:
+            return False
+
+        if int(opcode[0], 16) >= 0x0F:
             return True
 
         return False
