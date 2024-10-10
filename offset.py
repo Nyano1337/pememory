@@ -1,6 +1,6 @@
 import json
 import os
-
+from pathlib import Path
 from pememory import PEMemory
 
 class ClassInformer:
@@ -29,20 +29,24 @@ class ClassInformer:
 
         return self.pe_files[library]
 
-    def read_files_in_directory(self, directory: str):
-        for filename in os.listdir(directory):
-            path = os.path.join(directory, filename)
-            if os.path.isfile(path):
-                with open(path, "r", encoding="utf-8") as file:
-                    _offsets = json.load(file).get("Offset", None)
-                    if _offsets is None:
-                        continue
+    def read_files_in_directory(self, directory: str) -> None:
+        stack = [Path(self.game_path + directory)]
 
-                    for key, val in _offsets.items():
-                        class_name = key.split("::")[0]
-                        self.vtable_methods[class_name] = self.count_vtable_offset(class_name)
-            elif os.path.isdir(path):
-                self.read_files_in_directory(path)
+        while stack:
+            current_path = stack.pop()
+
+            for path in current_path.iterdir():
+                if path.is_file():
+                    with path.open("r", encoding="utf-8") as file:
+                        _offsets = json.load(file).get("Offset")
+                        if _offsets is None:
+                            continue
+
+                        for key, val in _offsets.items():
+                            class_name = key.split("::")[0]
+                            self.vtable_methods[class_name] = self.count_vtable_offset(class_name)
+                elif path.is_dir():
+                    stack.append(path)
 
     def count_vtable_offset(self, class_name: str):
         if class_name in self.vtable_methods:
@@ -62,7 +66,7 @@ if __name__ == '__main__':
     for lib in libs:
         vtb.load_library(lib)
 
-    vtb.read_files_in_directory(_game_path + r"csgo/addons/source2mod/gamedata")
+    vtb.read_files_in_directory(r"csgo/addons/source2mod/gamedata")
 
     offsets = [f"[{class_name}] {count}" for class_name, count in vtb.vtable_methods.items()]
     print(f"Offsets: \n" + "\n".join(offsets))
