@@ -79,12 +79,12 @@ class PEMemory:
                 return section.VirtualAddress + offset
         return PEMemory.INVALID_ADDRESS
 
-    def find_pattern_by_str(self, pattern: str, section: pefile.SectionStructure, start_offset: int = 0, to_addr: bool = True) -> int:
+    def find_pattern_by_str(self, pattern: str, section: pefile.SectionStructure = None, start_offset: int = 0, to_addr: bool = True) -> int:
         return self.find_pattern_by_bytes(pattern.encode('utf-8'), section, start_offset, to_addr)
 
-    def find_pattern_by_bytes(self, pattern: bytes, section: pefile.SectionStructure, start_offset: int = 0, to_addr: bool = True) -> int:
+    def find_pattern_by_bytes(self, pattern: bytes, section: pefile.SectionStructure = None, start_offset: int = 0, to_addr: bool = True) -> int:
         offset = section.get_data().find(pattern, start_offset)
-        return self.get_address_with_section(offset, section) if to_addr else offset
+        return self.get_address(offset, section) if to_addr else offset
 
     def get_vtable_by_name(self, vtable_name: str, decorated: bool = False) -> int:
         if len(vtable_name) == 0:
