@@ -87,6 +87,7 @@ class PEMemory:
         offset = section.get_data().find(pattern, start_offset)
         return self.get_address(offset, section) if to_addr else offset
 
+    # reference: https://github.com/komashchenko/DynLibUtils/blob/cc8b6ade9e912012d21d3fe4d07b98bd215abbe2/module_windows.cpp#L136
     def get_vtable_by_name(self, vtable_name: str, decorated: bool = False) -> int:
         if len(vtable_name) == 0:
             return PEMemory.INVALID_ADDRESS
