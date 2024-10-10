@@ -1,6 +1,7 @@
 import pefile
 import capstone
 
+
 class PEMemory:
     INVALID_ADDRESS = -1
 
