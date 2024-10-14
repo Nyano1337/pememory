@@ -258,6 +258,12 @@ class PEMemory:
         self.type_descriptor_names = dict(sorted(self.type_descriptor_names.items(), key=lambda item: item[0]))
 
 class RTTIHelper:
+    def __init__(self, mem: PEMemory):
+        self.mem = mem
+
+    def get_object_locator(self, vtable_ptr: int):
+        return self.RTTICompleteObjectLocator(self.mem.get_long(vtable_ptr - 8)  - self.mem.pe.OPTIONAL_HEADER.ImageBase, self.mem)
+
     class RTTIBaseClassDescriptor:
         _BCD_NOTVISIBLE = 0x00000001
         _BCD_AMBIGUOUS = 0x00000002
@@ -362,12 +368,6 @@ class RTTIHelper:
 
             # reference to object's base
             self.pSelf = locator_ptr
-
-    def __init__(self, mem: PEMemory):
-        self.mem = mem
-
-    def get_object_locator(self, vtable_ptr: int):
-        return self.RTTICompleteObjectLocator(self.mem.get_long(vtable_ptr - 8)  - self.mem.pe.OPTIONAL_HEADER.ImageBase, self.mem)
 
 class SigMaker:
     def __init__(self, mem: PEMemory):
