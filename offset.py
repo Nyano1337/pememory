@@ -1,13 +1,12 @@
 import json
-import os
 from pathlib import Path
 from pememory import PEMemory
 
 class ClassInformer:
     def __init__(self, game_path: str):
         self.game_path = game_path
-        self.pe_files: Dict[str, PEMemory] = {}
-        self.vtable_methods: Dict[str, int] = {}
+        self.pe_files: dict[str, PEMemory] = {}
+        self.vtable_methods: dict[str, int] = {}
 
     def load_library(self, library: str) -> PEMemory | None:
         if library in self.pe_files and self.pe_files[library] is not None:

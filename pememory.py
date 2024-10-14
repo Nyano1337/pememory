@@ -260,18 +260,18 @@ class PEMemory:
                 decorate_name = self.get_string(addr, self.runtime_data)
                 if decorate_name != PEMemory.INVALID_ADDRESS:
                     offset += len(decorate_name)
+                    type_name = self.undecorate_symbol_name(decorate_name)
+                    if self.type_descriptor_filter is not None:
+                        if any(x for x in self.type_descriptor_filter if x in type_name):
+                            continue
                     vtable = self.get_vtable_by_name(decorate_name, decorated=True)
-                    if vtable != PEMemory.INVALID_ADDRESS:
-                        type_name = self.undecorate_symbol_name(decorate_name)
-                        if self.type_descriptor_filter is not None:
-                            if any(x for x in self.type_descriptor_filter if x in type_name):
-                                continue
-                        self.type_descriptor_names[type_name] = vtable
+                    self.type_descriptor_names[type_name] = vtable
         self.type_descriptor_names = dict(sorted(self.type_descriptor_names.items(), key=lambda item: item[0]))
 
     def init_type_inherits(self):
         for type_name, vtable in self.type_descriptor_names.items():
-            self.type_inherits[type_name] = self.rtti_helper.get_exact_inherits(vtable)
+            if vtable != PEMemory.INVALID_ADDRESS:
+                self.type_inherits[type_name] = self.rtti_helper.get_exact_inherits(vtable)
 
 
 class RTTIHelper:
