@@ -4,17 +4,6 @@ import ctypes
 from ctypes.wintypes import *
 
 
-def RaiseIfZero(result, func=None, arguments=()):
-    """
-    Error checking for most Win32 API calls.
-
-    The function is assumed to return an integer, which is C{0} on error.
-    In that case the C{WindowsError} exception is raised.
-    """
-    if not result:
-        raise ctypes.WinError()
-    return result
-
 class PEMemory:
     INVALID_ADDRESS = -1
 
@@ -226,6 +215,18 @@ class PEMemory:
             self.runtime_functions[start_addr] = end_addr
             current_offset += 12
 
+    @staticmethod
+    def RaiseIfZero(result, func=None, arguments=()):
+        """
+        Error checking for most Win32 API calls.
+
+        The function is assumed to return an integer, which is C{0} on error.
+        In that case the C{WindowsError} exception is raised.
+        """
+        if not result:
+            raise ctypes.WinError()
+        return result
+
     def undecorate_symbol_name(self, symbol_name):
         symbol_name = symbol_name.replace('.?AV?', '?').replace('.?AV', '?')
 
@@ -233,7 +234,7 @@ class PEMemory:
         _UnDecorateSymbolNameA = self.dbghelp.UnDecorateSymbolName
         _UnDecorateSymbolNameA.argtypes = [LPSTR, LPSTR, DWORD, DWORD]
         _UnDecorateSymbolNameA.restype = DWORD
-        _UnDecorateSymbolNameA.errcheck = RaiseIfZero
+        _UnDecorateSymbolNameA.errcheck = self.RaiseIfZero
 
         buffer = ctypes.create_string_buffer(512)
         _UnDecorateSymbolNameA(symbol_name.encode('utf-8'), buffer, ctypes.sizeof(buffer), flags)
