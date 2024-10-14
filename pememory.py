@@ -7,7 +7,11 @@ from ctypes.wintypes import *
 class PEMemory:
     INVALID_ADDRESS = -1
 
-    def __init__(self, file_path: str, init_runtime_functions: bool = False):
+    def __init__(self,
+                 file_path: str,
+                 init_runtime_functions: bool = False,
+                 init_type_descriptor_names: bool = False,
+                 init_type_inherits: bool = False):
         self.dbghelp = ctypes.windll.dbghelp
         self.pe = pefile.PE(file_path, fast_load=True)
         self.rtti_helper = RTTIHelper(self)
@@ -26,6 +30,12 @@ class PEMemory:
 
         # type_descriptor_name -> vtable_addr
         self.type_descriptor_names: dict[str, int] = {}
+        if init_type_descriptor_names or init_type_inherits:
+            self.init_type_descriptor_names()
+
+        self.type_inherits: dict[str, list] = {}
+        if init_type_inherits:
+            self.init_type_inherits()
 
     @staticmethod
     def to_ida_pattern(byte_list) -> str:
@@ -257,6 +267,11 @@ class PEMemory:
                         self.type_descriptor_names[type_name] = vtable
         self.type_descriptor_names = dict(sorted(self.type_descriptor_names.items(), key=lambda item: item[0]))
 
+    def init_type_inherits(self):
+        for type_name, vtable in self.type_descriptor_names.items():
+            self.type_inherits[type_name] = self.rtti_helper.get_exact_inherits(vtable)
+
+
 class RTTIHelper:
     def __init__(self, mem: PEMemory):
         self.mem = mem
@@ -264,17 +279,39 @@ class RTTIHelper:
     def get_object_locator(self, vtable_ptr: int):
         return self.RTTICompleteObjectLocator(self.mem.get_long(vtable_ptr - 8)  - self.mem.pe.OPTIONAL_HEADER.ImageBase, self.mem)
 
+    def get_exact_inherits(self, vtable_ptr: int):
+        object_locator = self.get_object_locator(vtable_ptr)
+        if object_locator == PEMemory.INVALID_ADDRESS:
+            return None
+
+        inherits: list[str] = []
+        base_idx = 0
+        while base_idx != len(object_locator.hierarchyDescriptor.array_of_base_classes):
+            base = object_locator.hierarchyDescriptor.array_of_base_classes[base_idx]
+            inherits.append(self.mem.undecorate_symbol_name(base.pTypeDescriptor.name))
+            base_idx += base.pClassDescriptor.num_base_classes
+        return inherits
+
+    class RTTITypeDescriptor:
+        def __init__(self, descriptor_ptr: int, mem: PEMemory):
+            # internal runtime reference
+            self.runtime_reference = 0
+
+            # type descriptor name
+            self.name = mem.get_string(descriptor_ptr + 16)
+
     class RTTIBaseClassDescriptor:
-        _BCD_NOTVISIBLE = 0x00000001
-        _BCD_AMBIGUOUS = 0x00000002
-        _BCD_PRIVORPROTINCOMPOBJ = 0x00000004
-        _BCD_PRIVORPROTBASE = 0x00000008
-        _BCD_VBOFCONTOBJ = 0x00000010
-        _BCD_NONPOLYMORPHIC = 0x00000020
+        _BCD_NOTVISIBLE = 0x01
+        _BCD_AMBIGUOUS = 0x02
+        _BCD_PRIVORPROTINCOMPOBJ = 0x04
+        _BCD_PRIVORPROTBASE = 0x08
+        _BCD_VBOFCONTOBJ = 0x10
+        _BCD_NONPOLYMORPHIC = 0x20
+        _BCD_HASPCHD = 0x40
 
         def __init__(self, descriptor_ptr: int, mem: PEMemory):
             # reference to type description
-            self.pTypeDescriptor = mem.get_int(descriptor_ptr)
+            self.pTypeDescriptor = RTTIHelper.RTTITypeDescriptor(mem.get_int(descriptor_ptr), mem)
 
             # #of sub elements within base class array
             self.num_contained_bases = mem.get_int(descriptor_ptr + 4)
@@ -292,7 +329,7 @@ class RTTIHelper:
             self.attributes = mem.get_int(descriptor_ptr + 20)
 
             # reference to class hierarchy descriptor
-            self.pClassDescriptor = mem.get_int(descriptor_ptr + 24)
+            self.pClassDescriptor = RTTIHelper.RTTIClassHierarchyDescriptor(mem.get_int(descriptor_ptr + 24), mem)
 
         def is_not_visible(self) -> bool:
             return bool(self.attributes & self._BCD_NOTVISIBLE)
@@ -312,10 +349,13 @@ class RTTIHelper:
         def is_non_polymorphic(self) -> bool:
             return bool(self.attributes & self._BCD_NONPOLYMORPHIC)
 
+        def is_valid_rtti(self) -> bool:
+            return bool(self.attributes & self._BCD_HASPCHD)
+
     class RTTIClassHierarchyDescriptor:
-        _CHD_MULTINH = 0x00000001
-        _CHD_VIRTINH = 0x00000002
-        _CHD_AMBIGUOUS = 0x00000004
+        _CHD_MULTINH = 0x01
+        _CHD_VIRTINH = 0x02
+        _CHD_AMBIGUOUS = 0x04
 
         def __init__(self, descriptor_ptr: int, mem: PEMemory):
             # the value always is 0
@@ -334,7 +374,8 @@ class RTTIHelper:
             if self.num_base_classes > 1:
                 for i in range(self.num_base_classes):
                     if i == 0:
-                        continue # pass self
+                        # pass self
+                        continue
                     addr_base_class_descriptor = mem.get_int(self.reference_array_of_base_classes + i * 4)
                     base_class_descriptor = RTTIHelper.RTTIBaseClassDescriptor(addr_base_class_descriptor, mem)
                     self.array_of_base_classes.append(base_class_descriptor)
@@ -361,7 +402,7 @@ class RTTIHelper:
             self.cdOffset = mem.get_int(locator_ptr + 8)
 
             # reference to type description
-            self.pTypeDescriptor = mem.get_int(locator_ptr + 12)
+            self.pTypeDescriptor = RTTIHelper.RTTITypeDescriptor(mem.get_int(locator_ptr + 12), mem)
 
             # reference to hierarchy description
             self.hierarchyDescriptor = RTTIHelper.RTTIClassHierarchyDescriptor(mem.get_int(locator_ptr + 16), mem)
