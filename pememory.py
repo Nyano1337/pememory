@@ -11,6 +11,7 @@ class PEMemory:
                  file_path: str,
                  init_runtime_functions: bool = False,
                  init_type_descriptor_names: bool = False,
+                 type_descriptor_filter: list[str] = None,
                  init_type_inherits: bool = False):
         self.dbghelp = ctypes.windll.dbghelp
         self.pe = pefile.PE(file_path, fast_load=True)
@@ -30,6 +31,7 @@ class PEMemory:
 
         # type_descriptor_name -> vtable_addr
         self.type_descriptor_names: dict[str, int] = {}
+        self.type_descriptor_filter = type_descriptor_filter
         if init_type_descriptor_names or init_type_inherits:
             self.init_type_descriptor_names()
 
@@ -251,9 +253,6 @@ class PEMemory:
         return buffer.value.decode('utf-8')
 
     def init_type_descriptor_names(self):
-        filter_type_name = [
-            '<lambda',
-        ]
         offset = 0
         while (offset := self.find_pattern_by_str('.?AV', self.runtime_data, start_offset=offset, to_addr=False)) != PEMemory.INVALID_ADDRESS:
             addr = self.get_address_with_section(offset, self.runtime_data)
@@ -264,6 +263,9 @@ class PEMemory:
                     vtable = self.get_vtable_by_name(decorate_name, decorated=True)
                     if vtable != PEMemory.INVALID_ADDRESS:
                         type_name = self.undecorate_symbol_name(decorate_name)
+                        if self.type_descriptor_filter is not None:
+                            if any(x for x in self.type_descriptor_filter if x in type_name):
+                                continue
                         self.type_descriptor_names[type_name] = vtable
         self.type_descriptor_names = dict(sorted(self.type_descriptor_names.items(), key=lambda item: item[0]))
 

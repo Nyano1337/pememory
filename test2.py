@@ -10,7 +10,25 @@ if __name__ == '__main__':
     game_path = r"E:\Steam\steamapps\common\Counter-Strike Global Offensive\game"
     file_path = game_path + r"/bin/win64/" + module + ".dll"
 
-    mem = PEMemory(file_path, init_type_inherits=True)
+    filter_type_name = [
+        '<lambda',
+        'std::',
+        'RepeatedFieldPrimitiveAccessor',
+        '_Associated',
+        '_Deferred',
+        '_Func_base',
+        '_Func_impl',
+        '_Packaged_state',
+        '_Ref_count_obj',
+        '_Task_async_state',
+        'anonymous namespace',
+        'ctype<',
+        'numpunct<',
+        'snappy::',
+        'type_info',
+        'google::protobuf::'
+    ]
+    mem = PEMemory(file_path, init_type_inherits=True, type_descriptor_filter=filter_type_name)
     print(json.dumps(mem.type_inherits, indent=4))
     #vtable = mem.get_vtable_by_name("TEST_H")
     #helper = mem.rtti_helper.get_exact_inherits(vtable)
