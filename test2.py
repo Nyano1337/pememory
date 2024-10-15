@@ -29,7 +29,7 @@ if __name__ == '__main__':
         'google::protobuf::'
     ]
     mem = PEMemory(file_path, init_type_inherits=True, type_descriptor_filter=filter_type_name)
-    print(json.dumps(mem.type_inherits, indent=4))
+    print(json.dumps(mem.class_inherits, indent=4))
     #vtable = mem.get_vtable_by_name("TEST_H")
     #helper = mem.rtti_helper.get_exact_inherits(vtable)
     # vlen = mem.get_vtable_length("CEngineWatchdogThread")

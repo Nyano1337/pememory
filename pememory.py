@@ -10,7 +10,6 @@ class PEMemory:
     def __init__(self,
                  file_path: str,
                  init_runtime_functions: bool = False,
-                 init_type_descriptor_names: bool = False,
                  type_descriptor_filter: list[str] = None,
                  init_type_inherits: bool = False):
         self.dbghelp = ctypes.windll.dbghelp
@@ -29,13 +28,9 @@ class PEMemory:
         if init_runtime_functions:
             self.init_runtime_functions()
 
-        # type_descriptor_name -> vtable_addr
-        self.type_descriptor_names: dict[str, int] = {}
         self.type_descriptor_filter = type_descriptor_filter
-        if init_type_descriptor_names or init_type_inherits:
-            self.init_type_descriptor_names()
-
-        self.type_inherits: dict[str, list] = {}
+        self.class_inherits: dict[str, list] = {}
+        self.struct_inherits: dict[str, list] = {}
         if init_type_inherits:
             self.init_type_inherits()
 
@@ -63,6 +58,14 @@ class PEMemory:
         target_addr = section_start + offset
         if section_start <= target_addr < section_end:
             return target_addr
+        return PEMemory.INVALID_ADDRESS
+
+    def get_section_by_address(self, addr: int):
+        for section in self.pe.sections:
+            section_start = section.VirtualAddress
+            section_end = section.VirtualAddress + section.Misc_VirtualSize
+            if section_start <= addr < section_end:
+                return section
         return PEMemory.INVALID_ADDRESS
 
     def read_address(self, addr: int, bytes_to_read: int = 8, cast_list: bool = True):
@@ -110,9 +113,14 @@ class PEMemory:
                 return section_data[start_index:end_index].decode('utf-8')
         return PEMemory.INVALID_ADDRESS
 
+    def get_section_name(self, section):
+        if type(section) is int:
+            return ''
+        return section.Name.decode('utf-8').rstrip('\x00')
+
     def get_section(self, name: str):
         for section in self.pe.sections:
-            section_name = section.Name.decode('utf-8').rstrip('\x00')
+            section_name = self.get_section_name(section)
             if section_name == name:
                 return section
         return None
@@ -168,6 +176,35 @@ class PEMemory:
                     return rtti_complete_object_locator + 0x8
             current_offset += 0x4
         return PEMemory.INVALID_ADDRESS
+
+    def get_object_locator_by_type_name_addr(self, type_name_addr: int) -> int:
+        rtti_type_descriptor = type_name_addr - 0x10
+        rtti_type_descriptor_bytes = rtti_type_descriptor.to_bytes(4, byteorder='little')
+
+        current_offset = 0
+        while (current_offset := self.find_pattern_by_bytes(
+                rtti_type_descriptor_bytes, self.readonly_data, current_offset, False)) != PEMemory.INVALID_ADDRESS:
+            reference = self.get_address(current_offset, self.readonly_data)
+            signature = int(self.read_address(reference - 0xC, 1)[0], 16)
+            vtable_offset_from_top = int(self.read_address(reference - 0x8, 1)[0], 16)
+            if signature == 1 and vtable_offset_from_top == 0:
+                return reference - 0xC
+            current_offset += 0x4
+        return PEMemory.INVALID_ADDRESS
+
+    def get_base_class_descriptor_by_type_name_addr(self, type_name_addr: int) -> int:
+        rtti_type_descriptor = type_name_addr - 0x10
+        rtti_type_descriptor_bytes = rtti_type_descriptor.to_bytes(4, byteorder='little')
+        current_offset = 0
+        while (current_offset := self.find_pattern_by_bytes(rtti_type_descriptor_bytes, self.readonly_data, current_offset, False)) != PEMemory.INVALID_ADDRESS:
+            current_addr = self.get_address(current_offset, self.readonly_data)
+            if current_addr == rtti_type_descriptor + self.pe.OPTIONAL_HEADER.ImageBase or \
+                self.get_section_name(self.get_section_by_address(self.get_int(current_addr + 0x8))) == '.text':
+                current_offset += 0x4
+                continue
+            return current_addr
+        return PEMemory.INVALID_ADDRESS
+
 
     def is_valid_vtable_function(self, vtable_fn: int) -> bool:
         if int(self.read_address(vtable_fn)[7], 16) != 0x00:
@@ -240,7 +277,7 @@ class PEMemory:
         return result
 
     def undecorate_symbol_name(self, symbol_name):
-        symbol_name = symbol_name.replace('.?AV?', '?').replace('.?AV', '?')
+        symbol_name = symbol_name.replace('.?AV?', '??').replace('.?AV', '?').replace('.?AU', '?')
 
         flags = 0x1000 #UNDNAME_NAME_ONLY
         _UnDecorateSymbolNameA = self.dbghelp.UnDecorateSymbolName
@@ -252,37 +289,50 @@ class PEMemory:
         _UnDecorateSymbolNameA(symbol_name.encode('utf-8'), buffer, ctypes.sizeof(buffer), flags)
         return buffer.value.decode('utf-8')
 
-    def init_type_descriptor_names(self):
-        offset = 0
-        while (offset := self.find_pattern_by_str('.?AV', self.runtime_data, start_offset=offset, to_addr=False)) != PEMemory.INVALID_ADDRESS:
-            addr = self.get_address_with_section(offset, self.runtime_data)
-            if addr != PEMemory.INVALID_ADDRESS:
-                decorate_name = self.get_string(addr, self.runtime_data)
-                if decorate_name != PEMemory.INVALID_ADDRESS:
-                    offset += len(decorate_name)
-                    type_name = self.undecorate_symbol_name(decorate_name)
-                    if self.type_descriptor_filter is not None:
-                        if any(x for x in self.type_descriptor_filter if x in type_name):
-                            continue
-                    vtable = self.get_vtable_by_name(decorate_name, decorated=True)
-                    self.type_descriptor_names[type_name] = vtable
-        self.type_descriptor_names = dict(sorted(self.type_descriptor_names.items(), key=lambda item: item[0]))
-
     def init_type_inherits(self):
-        for type_name, vtable in self.type_descriptor_names.items():
-            if vtable != PEMemory.INVALID_ADDRESS:
-                self.type_inherits[type_name] = self.rtti_helper.get_exact_inherits(vtable)
-
+        patterns = ['.?AV', '.?AU']
+        for pattern in patterns:
+            try:
+                offset = 0
+                is_struct = 'U' in pattern
+                while (offset := self.find_pattern_by_str(pattern, self.runtime_data, start_offset=offset,
+                                                          to_addr=False)) != PEMemory.INVALID_ADDRESS:
+                    addr = self.get_address_with_section(offset, self.runtime_data)
+                    if addr != PEMemory.INVALID_ADDRESS:
+                        decorate_name = self.get_string(addr, self.runtime_data)
+                        if decorate_name != PEMemory.INVALID_ADDRESS:
+                            offset += len(decorate_name)
+                            type_name = self.undecorate_symbol_name(decorate_name)
+                            if self.type_descriptor_filter is not None:
+                                if any(x for x in self.type_descriptor_filter if x in type_name):
+                                    continue
+                            object_locator = self.get_object_locator_by_type_name_addr(addr)
+                            if object_locator != PEMemory.INVALID_ADDRESS:
+                                inherits = self.rtti_helper.get_exact_inherits_by_object_locator(object_locator)
+                                if is_struct:
+                                    self.struct_inherits[type_name] = inherits
+                                else:
+                                    self.class_inherits[type_name] = inherits
+                            else:
+                                base_class_descriptor = self.get_base_class_descriptor_by_type_name_addr(addr)
+                                if base_class_descriptor != PEMemory.INVALID_ADDRESS:
+                                    inherits = self.rtti_helper.get_exact_inherits_by_base_class_descriptor(base_class_descriptor)
+                                    if is_struct:
+                                        self.struct_inherits[type_name] = inherits
+                                    else:
+                                        self.class_inherits[type_name] = inherits
+            except Exception as e:
+                    print(f"init_type_inherits Error, Exception: {e}")
+            finally:
+                self.class_inherits = dict(sorted(self.class_inherits.items(), key=lambda item: item[0]))
+                self.struct_inherits = dict(sorted(self.struct_inherits.items(), key=lambda item: item[0]))
 
 class RTTIHelper:
     def __init__(self, mem: PEMemory):
         self.mem = mem
 
-    def get_object_locator(self, vtable_ptr: int):
-        return self.RTTICompleteObjectLocator(self.mem.get_long(vtable_ptr - 8)  - self.mem.pe.OPTIONAL_HEADER.ImageBase, self.mem)
-
-    def get_exact_inherits(self, vtable_ptr: int):
-        object_locator = self.get_object_locator(vtable_ptr)
+    def get_exact_inherits_by_object_locator(self, object_locator: int):
+        object_locator = self.RTTICompleteObjectLocator(object_locator, self.mem)
         if object_locator == PEMemory.INVALID_ADDRESS:
             return None
 
@@ -290,6 +340,19 @@ class RTTIHelper:
         base_idx = 0
         while base_idx != len(object_locator.hierarchyDescriptor.array_of_base_classes):
             base = object_locator.hierarchyDescriptor.array_of_base_classes[base_idx]
+            inherits.append(self.mem.undecorate_symbol_name(base.pTypeDescriptor.name))
+            base_idx += base.pClassDescriptor.num_base_classes
+        return inherits
+
+    def get_exact_inherits_by_base_class_descriptor(self, base_class_descriptor: int):
+        base_class_descriptor = self.RTTIBaseClassDescriptor(base_class_descriptor, self.mem)
+        if base_class_descriptor == PEMemory.INVALID_ADDRESS:
+            return None
+
+        inherits: list[str] = []
+        base_idx = 0
+        while base_idx != len(base_class_descriptor.pClassDescriptor.array_of_base_classes):
+            base = base_class_descriptor.pClassDescriptor.array_of_base_classes[base_idx]
             inherits.append(self.mem.undecorate_symbol_name(base.pTypeDescriptor.name))
             base_idx += base.pClassDescriptor.num_base_classes
         return inherits

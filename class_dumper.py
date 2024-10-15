@@ -31,24 +31,27 @@ class ClassDumper:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
 
+        def write_inheritance(_file, _name, _bases, is_class=True):
+            type_name = 'class' if is_class else 'struct'
+            _file.write(f'{type_name} {_name}')
+            if _bases:
+                _file.write(' : ')
+                inherits = ', '.join(_bases) if len(_bases) > 1 else _bases[0]
+                _file.write(f'{inherits}')
+            _file.write(' {}\n')
+
         for _lib, _mem in self.pe_files.items():
-            with open(os.path.join(dir_path, _lib) + '.cpp', 'w') as file:
-                for class_name, bases in _mem.type_inherits.items():
-                    file.write(f'class {class_name}')
-                    num_bases = len(bases)
-                    if num_bases > 0:
-                        file.write(' : ')
-                        if num_bases == 1:
-                            class_names = bases[0]
-                        else:
-                            class_names = ', '.join(bases)
-                    file.write(f'{class_names}' + ' {}\n')
+            with open(os.path.join(dir_path, _lib) + '.hpp', 'w') as file:
+                for class_name, bases in _mem.class_inherits.items():
+                    write_inheritance(file, class_name, bases, is_class=True)
+                for struct_name, bases in _mem.struct_inherits.items():
+                    write_inheritance(file, struct_name, bases, is_class=False)
 
 if __name__ == '__main__':
     filter_type_name = [
+        '`',
         '<lambda',
         'std::',
-        'RepeatedFieldPrimitiveAccessor',
         '_Associated',
         '_Deferred',
         '_Func_base',
@@ -59,17 +62,18 @@ if __name__ == '__main__':
         'anonymous namespace',
         'ctype<',
         'numpunct<',
+        'buffer<',
         'snappy::',
         'type_info',
         'google::protobuf::',
         'iterator_buffer',
-        'fmt::'
+        'fmt::',
+        'Concurrency::'
     ]
 
-    _game_path = "C:/Program Files (x86)/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
+    _game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
     dumper = ClassDumper(_game_path, filter_type_name)
-    #libs = ["server", "matchmaking", "engine2", "tier0", "networksystem"]
-    libs = ["tier0"]
+    libs = ["server", "matchmaking", "engine2", "tier0", "networksystem"]
     for lib in libs:
         dumper.load_library(lib)
 
