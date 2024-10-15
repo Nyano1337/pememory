@@ -83,7 +83,8 @@ if __name__ == '__main__':
         'google::protobuf::',
         'iterator_buffer',
         'fmt::',
-        'Concurrency::'
+        'Concurrency::',
+        'moodycamel::'
     ]
 
     _game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
