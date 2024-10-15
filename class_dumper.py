@@ -3,13 +3,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pememory import PEMemory
 
-print_lock = threading.Lock()
-
 class ClassDumper:
     def __init__(self, game_path: str, type_filter: list = None):
         self.game_path = game_path
         self.pe_files: dict[str, PEMemory] = {}
         self.type_filter = type_filter
+        self.lock = threading.Lock()
 
     def load_library(self, library: str) -> PEMemory | None:
         if library in self.pe_files and self.pe_files[library] is not None:
@@ -23,12 +22,12 @@ class ClassDumper:
             else:
                 file_path = self.game_path + "bin/win64/" + library + ".dll"
 
-            with print_lock:
+            with self.lock:
                 print(f'[{library}] Parsing...')
 
             self.pe_files[library] = PEMemory(file_path, type_descriptor_filter=self.type_filter, init_type_inherits=True)
 
-            with print_lock:
+            with self.lock:
                 print(f'[{library}] Done!')
         except Exception as e:
             print(
@@ -37,30 +36,45 @@ class ClassDumper:
 
         return self.pe_files[library]
 
+    def write_inheritance(self, _file, _name, _bases, vtable_len=0, is_class=True):
+        type_name = 'class' if is_class else 'struct'
+        _file.write(f'{type_name} {_name}')
+        if _bases:
+            _file.write(' : ')
+            inherits = ', '.join(_bases) if len(_bases) > 1 else _bases[0]
+            _file.write(f'{inherits}')
+        if vtable_len > 0:
+            _file.write(' { ' + f'void* vtable[{vtable_len}];' + ' }\n')
+        else:
+            _file.write(' {}\n')
+
     def dump(self, dir_path: str):
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+        with self.lock:
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
 
-        def write_inheritance(_file, _name, _bases, vtable_len = 0, is_class=True):
-            type_name = 'class' if is_class else 'struct'
-            _file.write(f'{type_name} {_name}')
-            if _bases:
-                _file.write(' : ')
-                inherits = ', '.join(_bases) if len(_bases) > 1 else _bases[0]
-                _file.write(f'{inherits}')
-            if vtable_len > 0:
-                _file.write(' { ' + f'void* vtable[{vtable_len}];' + ' }\n')
-            else:
-                _file.write(' {}\n')
+            for _lib, _mem in self.pe_files.items():
+                with open(os.path.join(dir_path, _lib) + '.hpp', 'w') as file:
+                    for class_name, bases in _mem.class_inherits.items():
+                        vtable_len = 0 if class_name not in _mem.vtable_cache else len(_mem.vtable_cache[class_name])
+                        self.write_inheritance(file, class_name, bases, vtable_len, is_class=True)
+                    for struct_name, bases in _mem.struct_inherits.items():
+                        vtable_len = 0 if struct_name not in _mem.vtable_cache else len(_mem.vtable_cache[struct_name])
+                        self.write_inheritance(file, struct_name, bases, vtable_len, is_class=False)
 
-        for _lib, _mem in self.pe_files.items():
-            with open(os.path.join(dir_path, _lib) + '.hpp', 'w') as file:
+    def dump_by_lib(self, dir_path: str, lib: str):
+        with self.lock:
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+
+            _mem = self.pe_files[lib]
+            with open(os.path.join(dir_path, lib) + '.hpp', 'w') as file:
                 for class_name, bases in _mem.class_inherits.items():
                     vtable_len = 0 if class_name not in _mem.vtable_cache else len(_mem.vtable_cache[class_name])
-                    write_inheritance(file, class_name, bases, vtable_len, is_class=True)
+                    self.write_inheritance(file, class_name, bases, vtable_len, is_class=True)
                 for struct_name, bases in _mem.struct_inherits.items():
                     vtable_len = 0 if struct_name not in _mem.vtable_cache else len(_mem.vtable_cache[struct_name])
-                    write_inheritance(file, struct_name, bases, vtable_len, is_class=False)
+                    self.write_inheritance(file, struct_name, bases, vtable_len, is_class=False)
 
 if __name__ == '__main__':
     filter_type_name = [
@@ -92,7 +106,11 @@ if __name__ == '__main__':
     # "server", "engine2", "matchmaking", "tier0", "networksystem"
     libs = ["server", "engine2", "matchmaking", "tier0", "networksystem"]
     threads = []
-    with ThreadPoolExecutor(max_workers=len(libs)) as executor:
-        executor.map(dumper.load_library, libs)
 
-    dumper.dump('./class_dump')
+    def load_library_and_dump(lib):
+        dumper.load_library(lib)
+        dumper.dump_by_lib('./class_dump', lib)
+
+    with ThreadPoolExecutor(max_workers=len(libs)) as executor:
+        executor.map(load_library_and_dump, libs)
+

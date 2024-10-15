@@ -298,9 +298,9 @@ class PEMemory:
             current_addr = self.get_address(current_offset, self.readonly_data)
             if (current_addr == rtti_type_descriptor + self.pe.OPTIONAL_HEADER.ImageBase or
                 self.get_section_name(self.get_section_by_address(self.get_int(current_addr + 0x8))) == '.text' or
-                self.get_int(current_addr + 0xC) != 0xFFFFFFFF):
+                self.get_int(current_addr + 0xC) != -1):
                 # Don't expect a non-object_locator have virtual extends
-                # So always intends pdisp is 0xFFFFFFFF
+                # So always intends pdisp is -1
                 current_offset += 0x4
                 continue
             yield 'base_class_descriptor', current_addr
