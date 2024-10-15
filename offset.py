@@ -61,11 +61,12 @@ class ClassInformer:
 if __name__ == '__main__':
     _game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
     vtb = ClassInformer(_game_path)
-    libs = ["server", "matchmaking", "engine2", "tier0", "networksystem"]
+    libs = ["server", "matchmaking", "engine2", "tier0", "networksystem", "resourcesystem"]
     for lib in libs:
         vtb.load_library(lib)
 
     vtb.read_files_in_directory(r"csgo/addons/source2mod/gamedata")
 
-    offsets = [f"[{class_name}] {count}" for class_name, count in vtb.vtable_methods.items()]
-    print(f"Offsets: \n" + "\n".join(offsets))
+    offsets = sorted([f"[{class_name}] {count}" for class_name, count in vtb.vtable_methods.items()])
+    with open('./offset.txt', 'w') as file:
+        file.write(f"Offsets: \n" + "\n".join(offsets))

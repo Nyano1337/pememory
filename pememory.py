@@ -203,6 +203,7 @@ class PEMemory:
             return -1
 
         self.vtable_cache[vtable_name] = self.get_vtable_functions_by_addr(fn)
+        return len(self.vtable_cache[vtable_name])
 
     def get_vtable_functions_by_addr(self, vtable_addr: int) -> list:
         count = 0
