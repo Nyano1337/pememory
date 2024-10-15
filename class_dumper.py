@@ -1,5 +1,9 @@
-from pememory import PEMemory
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pememory import PEMemory
+
+print_lock = threading.Lock()
 
 class ClassDumper:
     def __init__(self, game_path: str, type_filter: list = None):
@@ -19,7 +23,13 @@ class ClassDumper:
             else:
                 file_path = self.game_path + "bin/win64/" + library + ".dll"
 
+            with print_lock:
+                print(f'[{library}] Parsing...')
+
             self.pe_files[library] = PEMemory(file_path, type_descriptor_filter=self.type_filter, init_type_inherits=True)
+
+            with print_lock:
+                print(f'[{library}] Done!')
         except Exception as e:
             print(
                 f"Error: An unexpected error occurred while opening the file {file_path}. Exception: {e}")
@@ -73,8 +83,10 @@ if __name__ == '__main__':
 
     _game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
     dumper = ClassDumper(_game_path, filter_type_name)
-    libs = ["server", "matchmaking", "engine2", "tier0", "networksystem"]
-    for lib in libs:
-        dumper.load_library(lib)
+    # "server", "engine2",
+    libs = ["matchmaking", "tier0", "networksystem"]
+    threads = []
+    with ThreadPoolExecutor(max_workers=len(libs)) as executor:
+        executor.map(dumper.load_library, libs)
 
     dumper.dump('./class_dump')
