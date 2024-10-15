@@ -41,21 +41,26 @@ class ClassDumper:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
 
-        def write_inheritance(_file, _name, _bases, is_class=True):
+        def write_inheritance(_file, _name, _bases, vtable_len = 0, is_class=True):
             type_name = 'class' if is_class else 'struct'
             _file.write(f'{type_name} {_name}')
             if _bases:
                 _file.write(' : ')
                 inherits = ', '.join(_bases) if len(_bases) > 1 else _bases[0]
                 _file.write(f'{inherits}')
-            _file.write(' {}\n')
+            if vtable_len > 0:
+                _file.write(' { ' + f'void* vtable[{vtable_len}];' + ' }\n')
+            else:
+                _file.write(' {}\n')
 
         for _lib, _mem in self.pe_files.items():
             with open(os.path.join(dir_path, _lib) + '.hpp', 'w') as file:
                 for class_name, bases in _mem.class_inherits.items():
-                    write_inheritance(file, class_name, bases, is_class=True)
+                    vtable_len = 0 if class_name not in _mem.vtable_cache else len(_mem.vtable_cache[class_name])
+                    write_inheritance(file, class_name, bases, vtable_len, is_class=True)
                 for struct_name, bases in _mem.struct_inherits.items():
-                    write_inheritance(file, struct_name, bases, is_class=False)
+                    vtable_len = 0 if struct_name not in _mem.vtable_cache else len(_mem.vtable_cache[struct_name])
+                    write_inheritance(file, struct_name, bases, vtable_len, is_class=False)
 
 if __name__ == '__main__':
     filter_type_name = [
@@ -83,8 +88,8 @@ if __name__ == '__main__':
 
     _game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
     dumper = ClassDumper(_game_path, filter_type_name)
-    # "server", "engine2",
-    libs = ["matchmaking", "tier0", "networksystem"]
+    # "server", "engine2", "matchmaking", "tier0", "networksystem"
+    libs = ["engine2"]
     threads = []
     with ThreadPoolExecutor(max_workers=len(libs)) as executor:
         executor.map(dumper.load_library, libs)
