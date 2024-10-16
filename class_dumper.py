@@ -104,7 +104,7 @@ if __name__ == '__main__':
     _game_path = "E:/Steam/steamapps/common/Counter-Strike Global Offensive/game/"
     dumper = ClassDumper(_game_path, filter_type_name)
     # "server", "engine2", "matchmaking", "tier0", "networksystem"
-    libs = ["server", "engine2", "matchmaking", "tier0", "networksystem"]
+    libs = ["server", "engine2", "matchmaking", "tier0", "networksystem", "resourcesystem"]
     threads = []
 
     def load_library_and_dump(lib):
